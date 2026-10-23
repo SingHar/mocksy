@@ -66,6 +66,15 @@ def awsconfig():
     return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
 
 
+@aws_provider()
+def cloudfront():
+    from localstack.services.cloudfront.provider import CloudfrontProvider
+    from localstack.services.moto import MotoFallbackDispatcher
+
+    provider = CloudfrontProvider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
+
+
 @aws_provider(api="cloudwatch", name="default")
 def cloudwatch():
     from localstack.services.cloudwatch.provider_v2 import CloudwatchProvider
@@ -139,6 +148,24 @@ def ec2():
     from localstack.services.moto import MotoFallbackDispatcher
 
     provider = Ec2Provider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
+
+
+@aws_provider()
+def ecs():
+    from localstack.services.ecs.provider import EcsProvider
+    from localstack.services.moto import MotoFallbackDispatcher
+
+    provider = EcsProvider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
+
+
+@aws_provider()
+def elasticache():
+    from localstack.services.elasticache.provider import ElasticacheProvider
+    from localstack.services.moto import MotoFallbackDispatcher
+
+    provider = ElasticacheProvider()
     return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
 
 
@@ -236,6 +263,15 @@ def opensearch():
 
     provider = OpensearchProvider()
     return Service.for_provider(provider)
+
+
+@aws_provider()
+def rds():
+    from localstack.services.moto import MotoFallbackDispatcher
+    from localstack.services.rds.provider import RdsProvider
+
+    provider = RdsProvider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
 
 
 @aws_provider()
