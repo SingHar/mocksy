@@ -9,7 +9,7 @@ from functools import lru_cache
 
 import moto.backends as moto_backends
 from moto.core.base_backend import BackendDict
-from moto.core.exceptions import RESTError
+from localstack.utils.moto_compat import RESTError
 from rolo.router import RegexConverter
 from werkzeug.exceptions import NotFound
 from werkzeug.routing import Map, Rule

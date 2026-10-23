@@ -1,0 +1,88 @@
+name: Moto compatibility (mocksy)
+
+# mocksy runs with moto-ext (the default) or upstream moto (issue #6).
+# This workflow runs the tests of the Moto-backed services with both:
+# - on pull requests that change the services, dependencies or this workflow
+# - every Monday against the latest releases; a failure opens an issue
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+  pull_request:
+    paths:
+      - "localstack-core/localstack/services/**"
+      - "localstack-core/localstack/utils/moto_compat.py"
+      - "localstack-core/localstack/aws/handlers/**"
+      - "pyproject.toml"
+      - "requirements-*.txt"
+      - ".github/workflows/mocksy-moto-compat.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  tests:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: moto-ext (pinned)
+            moto: ""
+          - name: moto-ext (latest)
+            moto: "moto-ext[all]"
+          - name: moto (latest)
+            moto: "moto[all]"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install -r requirements-dev.txt
+          if [ -n "${{ matrix.moto }}" ]; then
+            uv pip uninstall moto-ext
+            uv pip install --upgrade "${{ matrix.moto }}"
+          fi
+          uv pip install -e . --no-deps
+          uv pip list | grep -iE "^moto"
+
+      - name: Unit tests
+        run: |
+          . .venv/bin/activate
+          python -m pytest tests/unit -k "not docker" -q
+
+      - name: Moto-backed service tests
+        run: |
+          . .venv/bin/activate
+          python -m pytest -q -k "not lambda" \
+            tests/aws/services/acm tests/aws/services/config tests/aws/services/ec2 \
+            tests/aws/services/iam tests/aws/services/route53 tests/aws/services/route53resolver \
+            tests/aws/services/redshift tests/aws/services/s3control tests/aws/services/scheduler \
+            tests/aws/services/secretsmanager tests/aws/services/ses tests/aws/services/sts \
+            tests/aws/services/support tests/aws/services/swf tests/aws/services/ssm \
+            tests/aws/services/kms tests/aws/services/logs tests/aws/services/cloudwatch \
+            tests/aws/services/events tests/aws/services/resource_groups \
+            tests/aws/services/resourcegroupstaggingapi tests/aws/services/ecs \
+            tests/aws/services/rds tests/aws/services/elasticache tests/aws/services/cloudfront
+
+      - name: Open an issue when the weekly run fails
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Weekly Moto compatibility run failed: ${{ matrix.name }}"
+          if ! gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number' | grep -q .; then
+            gh issue create --title "$title" \
+              --body "The scheduled run with ${{ matrix.name }} failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
