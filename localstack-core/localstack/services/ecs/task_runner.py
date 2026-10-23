@@ -104,6 +104,8 @@ class TaskRunner:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._tasks: dict[str, TrackedTask] = {}
+        # tasks whose containers are being stopped in the background
+        self._stopping: dict[str, TrackedTask] = {}
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ecs-task")
         self._loop_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -145,8 +147,9 @@ class TaskRunner:
         """Stop the monitor loop and remove all containers (service stop or state reset)."""
         self._stop_event.set()
         with self._lock:
-            tracked = list(self._tasks.values())
+            tracked = list(self._tasks.values()) + list(self._stopping.values())
             self._tasks.clear()
+            self._stopping.clear()
         for item in tracked:
             for record in item.containers:
                 self._remove_container(record)
@@ -204,6 +207,8 @@ class TaskRunner:
         """
         with self._lock:
             tracked = self._tasks.pop(task_arn, None)
+            if tracked:
+                self._stopping[task_arn] = tracked
         if not tracked:
             return
         task = tracked.task
@@ -215,6 +220,35 @@ class TaskRunner:
         # Moto's StopTask has already set STOPPED; the containers are still running
         task.last_status = "DEACTIVATING"
         self._executor.submit(self._stop_tracked, tracked, reason, stop_code)
+
+    def running_tasks(self, account_id: str, region: str) -> list[dict[str, Any]]:
+        """RUNNING tasks with their task definition and container IDs (for metrics)."""
+        from moto.ecs.models import ecs_backends
+
+        with self._lock:
+            tracked = [
+                t
+                for t in self._tasks.values()
+                if t.account_id == account_id
+                and t.region == region
+                and t.task.last_status == "RUNNING"
+            ]
+        result = []
+        for item in tracked:
+            try:
+                task_definition = ecs_backends[account_id][region].describe_task_definition(
+                    item.task.task_definition_arn
+                )
+            except Exception:
+                continue
+            result.append(
+                {
+                    "task": item.task,
+                    "task_definition": task_definition,
+                    "container_ids": [r.runtime_id for r in item.containers if r.runtime_id],
+                }
+            )
+        return result
 
     # -------------------------------------------------------------- starting
 
@@ -445,6 +479,8 @@ class TaskRunner:
         task.stop_code = stop_code
         task.stopped_at = _now()
         task.execution_stopped_at = task.stopped_at
+        with self._lock:
+            self._stopping.pop(task.task_arn, None)
 
     def _read_exit_code(self, record: ContainerRecord) -> None:
         if not record.runtime_id or record.exit_code is not None:

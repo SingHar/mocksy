@@ -981,6 +981,21 @@ BUCKET_MARKER_LOCAL = (
 # https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html
 LAMBDA_DISABLE_AWS_ENDPOINT_URL = is_env_true("LAMBDA_DISABLE_AWS_ENDPOINT_URL")
 
+# Application Auto Scaling (mocksy): apply scaling policies to ECS services. 0 records only.
+APPLICATION_AUTOSCALING_RUN = (
+    os.environ.get("APPLICATION_AUTOSCALING_RUN", "1").strip() not in FALSE_STRINGS
+)
+
+# Application Auto Scaling (mocksy): seconds between evaluations of scaling policies.
+APPLICATION_AUTOSCALING_INTERVAL = float(
+    os.environ.get("APPLICATION_AUTOSCALING_INTERVAL", "").strip() or 15
+)
+
+# Application Auto Scaling (mocksy): CloudWatch period (seconds) used to read metrics.
+APPLICATION_AUTOSCALING_METRIC_PERIOD = int(
+    os.environ.get("APPLICATION_AUTOSCALING_METRIC_PERIOD", "").strip() or 60
+)
+
 # ECS (mocksy): run ECS tasks as Docker containers. 0 records tasks only.
 ECS_RUN_CONTAINERS = os.environ.get("ECS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
 
@@ -1299,6 +1314,9 @@ STATE_SERIALIZATION_BACKEND = os.environ.get("STATE_SERIALIZATION_BACKEND", "").
 # => Move removed legacy variables to the section grouped by release (still relevant for deprecation warnings)
 # => Do *not* include any internal developer configurations that apply to host-mode only in this list.
 CONFIG_ENV_VARS = [
+    "APPLICATION_AUTOSCALING_INTERVAL",
+    "APPLICATION_AUTOSCALING_METRIC_PERIOD",
+    "APPLICATION_AUTOSCALING_RUN",
     "ECS_DISABLE_AWS_ENDPOINT_URL",
     "ECS_DOCKER_NETWORK",
     "ECS_MONITOR_INTERVAL",

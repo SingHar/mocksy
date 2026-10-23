@@ -7,6 +7,8 @@ typical container application against mocksy:
 - ECS cluster, Fargate task definition and service
 - RDS PostgreSQL 18 instance with one read replica
 - ElastiCache Valkey replication group with two nodes
+- Application Auto Scaling target and a target tracking policy on a queue
+  depth metric for the ECS service
 - CloudFront distribution
 
 ## Run
@@ -25,9 +27,9 @@ To use a different endpoint, set `-var endpoint=http://host:port`.
 
 ## Expected result
 
-- `apply` creates 12 resources with no error.
+- `apply` creates 14 resources with no error.
 - `plan` after `apply` shows no changes.
-- `destroy` removes 12 resources with no error.
+- `destroy` removes 14 resources with no error.
 
 The full cycle takes about 6 minutes. Most of that time is the AWS provider's
 own wait intervals for RDS, ElastiCache and CloudFront, not mocksy.
