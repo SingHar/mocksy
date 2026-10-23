@@ -1,7 +1,7 @@
 """ElastiCache provider.
 
-Phase 1: operations are handled by Moto through the MotoFallbackDispatcher.
-Clusters are recorded but no Valkey or Redis server runs yet (see issue #3, phase 2).
+Operations are handled by Moto through the MotoFallbackDispatcher. Valkey,
+Redis and Memcached nodes run as Docker containers (see ``cache_runner``).
 
 Fixes on top of Moto:
 - In AWS, creating a replication group also creates one cache cluster per
@@ -32,6 +32,7 @@ from localstack.aws.api.elasticache import (
     ElasticacheApi,
     String,
 )
+from localstack.services.elasticache.cache_runner import CACHE_RUNNER
 from localstack.services.moto import call_moto
 from localstack.services.plugins import ServiceLifecycleHook
 from localstack.state import StateVisitor
@@ -116,6 +117,8 @@ def _create_replication_group(fn, self: ElastiCacheBackend, **kwargs):
                 group.replication_group_id,
                 e,
             )
+    group._mocksy_requested_port = kwargs.get("port")
+    CACHE_RUNNER.create_group(self, group, kwargs.get("auth_token"))
     return group
 
 
@@ -140,14 +143,40 @@ def _delete_replication_group(
             continue
         self.cache_clusters.pop(cluster_id, None)
 
+    CACHE_RUNNER.delete_group(self, group, members)
     # the response shows status "deleting"; afterwards the group no longer exists
     self.replication_groups.pop(replication_group_id, None)
     return group
 
 
+@patch(ElastiCacheBackend.create_cache_cluster)
+def _create_cache_cluster(fn, self: ElastiCacheBackend, *args, **kwargs):
+    cluster = fn(self, *args, **kwargs)
+    group_id = kwargs.get("replication_group_id")
+    if group_id:
+        # Moto records the group only for the "redis" engine
+        cluster.replication_group_id = group_id
+    else:
+        CACHE_RUNNER.create_cluster(self, cluster, kwargs.get("auth_token"))
+    return cluster
+
+
+@patch(ElastiCacheBackend.delete_cache_cluster)
+def _delete_cache_cluster(fn, self: ElastiCacheBackend, cache_cluster_id: str):
+    cluster = fn(self, cache_cluster_id)
+    CACHE_RUNNER.delete_cluster(self, cluster)
+    return cluster
+
+
 class ElasticacheProvider(ElasticacheApi, ServiceLifecycleHook):
     def accept_state_visitor(self, visitor: StateVisitor):
         visitor.visit(elasticache_backends)
+
+    def on_before_stop(self):
+        CACHE_RUNNER.shutdown()
+
+    def on_before_state_reset(self):
+        CACHE_RUNNER.shutdown()
 
     @handler("DescribeCacheClusters", expand=False)
     def describe_cache_clusters(

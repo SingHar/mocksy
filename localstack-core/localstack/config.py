@@ -981,6 +981,23 @@ BUCKET_MARKER_LOCAL = (
 # https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html
 LAMBDA_DISABLE_AWS_ENDPOINT_URL = is_env_true("LAMBDA_DISABLE_AWS_ENDPOINT_URL")
 
+# ElastiCache (mocksy): run Valkey, Redis and Memcached nodes as Docker containers.
+ELASTICACHE_RUN_CONTAINERS = (
+    os.environ.get("ELASTICACHE_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
+)
+
+# ElastiCache (mocksy): images; {major} and {minor} come from the engine version (8.1 -> 8, 8.1).
+ELASTICACHE_VALKEY_IMAGE = (
+    os.environ.get("ELASTICACHE_VALKEY_IMAGE", "").strip() or "valkey/valkey:{major}"
+)
+ELASTICACHE_REDIS_IMAGE = os.environ.get("ELASTICACHE_REDIS_IMAGE", "").strip() or "redis:{major}"
+ELASTICACHE_MEMCACHED_IMAGE = (
+    os.environ.get("ELASTICACHE_MEMCACHED_IMAGE", "").strip() or "memcached:{minor}"
+)
+
+# ElastiCache (mocksy): seconds to wait for a node to answer.
+ELASTICACHE_START_TIMEOUT = float(os.environ.get("ELASTICACHE_START_TIMEOUT", "").strip() or 60)
+
 # RDS (mocksy): run PostgreSQL instances as Docker containers. 0 records instances only.
 RDS_RUN_CONTAINERS = os.environ.get("RDS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
 
@@ -1296,6 +1313,11 @@ STATE_SERIALIZATION_BACKEND = os.environ.get("STATE_SERIALIZATION_BACKEND", "").
 # => Move removed legacy variables to the section grouped by release (still relevant for deprecation warnings)
 # => Do *not* include any internal developer configurations that apply to host-mode only in this list.
 CONFIG_ENV_VARS = [
+    "ELASTICACHE_MEMCACHED_IMAGE",
+    "ELASTICACHE_REDIS_IMAGE",
+    "ELASTICACHE_RUN_CONTAINERS",
+    "ELASTICACHE_START_TIMEOUT",
+    "ELASTICACHE_VALKEY_IMAGE",
     "RDS_POSTGRES_DEFAULT_VERSION",
     "RDS_POSTGRES_IMAGE",
     "RDS_RUN_CONTAINERS",
