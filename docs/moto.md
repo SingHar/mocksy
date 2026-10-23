@@ -35,6 +35,8 @@ between the packages. Import them from there, not from Moto:
 | Name | moto-ext | upstream moto |
 |---|---|---|
 | `RESTError` | `moto.core.exceptions.RESTError` | `moto.core.exceptions._RESTError` |
+| Request passed to dispatch | mocksy's werkzeug request | `moto.core.request.Request` (`to_moto_request`) |
+| Secrets Manager `tag_resource` tags | `[{"Key", "Value"}]` | `{key: value}` |
 
 `is_moto_ext()` tells which package is installed. Use it to skip tests that
 depend on moto-ext internals.

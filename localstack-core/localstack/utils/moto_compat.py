@@ -4,6 +4,8 @@ mocksy runs with either package (issue #6). Import the names that differ from
 here instead of from Moto directly.
 """
 
+import functools
+
 import moto.core.exceptions as _moto_exceptions
 
 # moto-ext: RESTError. Upstream moto 5.2 renamed it to _RESTError.
@@ -12,6 +14,7 @@ RESTError: type[Exception] = (
 )
 
 
+@functools.cache
 def is_moto_ext() -> bool:
     """True when the installed Moto is LocalStack's moto-ext build."""
     from importlib.metadata import PackageNotFoundError, distribution
