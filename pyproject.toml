@@ -122,6 +122,8 @@ test = [
     "aws-cdk-lib>=2.88.0",
     "websocket-client>=1.7.0",
     "localstack-snapshot>=0.1.1",
+    # clients for the database containers of RDS and ElastiCache (mocksy)
+    "pg8000>=1.31",
 ]
 
 # for developing localstack
