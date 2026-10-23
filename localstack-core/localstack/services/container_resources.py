@@ -18,6 +18,9 @@ from __future__ import annotations
 
 import logging
 import re
+import select
+import socket
+import ssl
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -31,6 +34,52 @@ from localstack.utils.server.tcp_proxy import TCPProxy
 from localstack.utils.urls import localstack_host
 
 LOG = logging.getLogger(__name__)
+
+
+class TLSTerminatingProxy(TCPProxy):
+    """A TCP proxy that accepts TLS from clients and forwards plain TCP to the server.
+
+    The certificate is mocksy's certificate for ``localhost.localstack.cloud``.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        from localstack.utils.ssl import create_ssl_cert
+
+        _, cert_file, key_file = create_ssl_cert()
+        self._ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        self._ssl_context.load_cert_chain(cert_file, key_file)
+
+    def _handle_request(self, s_src: socket.socket):
+        try:
+            s_src.settimeout(10)
+            tls_src = self._ssl_context.wrap_socket(s_src, server_side=True)
+            tls_src.settimeout(None)
+        except Exception as e:
+            LOG.debug("TLS handshake on port %s failed: %s", self.port, e)
+            s_src.close()
+            return
+        try:
+            with (
+                tls_src,
+                socket.create_connection(
+                    (self._target_address, self._target_port), timeout=10
+                ) as s_dst,
+            ):
+                s_dst.settimeout(None)
+                while not self._stopped.is_set():
+                    # decrypted bytes can wait inside the TLS object, where select() cannot see them
+                    readable = [tls_src] if tls_src.pending() else []
+                    if not readable:
+                        readable, _, _ = select.select([tls_src, s_dst], [], [], 1)
+                    for sock in readable:
+                        data = sock.recv(65536)
+                        if not data:
+                            return
+                        (s_dst if sock is tls_src else tls_src).sendall(data)
+        except (OSError, ssl.SSLError) as e:
+            LOG.debug("TLS proxy connection on port %s closed: %s", self.port, e)
+
 
 LABEL_MANAGED = "mocksy.resource.managed"
 LABEL_RESOURCE = "mocksy.resource.arn"
@@ -70,6 +119,8 @@ class ContainerResource:
     # address of the server on the Docker network (for replication between containers)
     network_ip: str = ""
     external_port: int = 0
+    # accept TLS on the external port (the server in the container uses plain TCP)
+    tls: bool = False
     proxy: TCPProxy | None = field(default=None, repr=False)
 
     @property
@@ -85,8 +136,14 @@ class ContainerResource:
         entrypoint: list[str] | str | None = None,
         labels: dict[str, str] | None = None,
         preferred_port: int | None = None,
+        fixed_port: int | None = None,
     ) -> None:
-        """Pull the image if needed, start the container and the proxy."""
+        """Pull the image if needed, start the container and the proxy.
+
+        :param preferred_port: a port of the external range to try first
+        :param fixed_port: a port outside the range to listen on (for example 6379), used
+            when it is free; otherwise a range port is used. ``external_port`` shows the result.
+        """
         self._pull_image()
         self.network = get_main_container_network()
         ports = None
@@ -113,7 +170,7 @@ class ContainerResource:
         )
         if config.is_in_docker:
             self.target_host, self.target_port = self.network_ip, self.internal_port
-        self._start_proxy(preferred_port)
+        self._start_proxy(preferred_port, fixed_port)
 
     def _pull_image(self) -> None:
         try:
@@ -126,11 +183,34 @@ class ContainerResource:
         except Exception as e:
             raise ContainerResourceError(f"Cannot pull image {self.image}: {e}") from e
 
-    def _start_proxy(self, preferred_port: int | None) -> None:
+    @property
+    def _listen_host(self) -> str:
+        return config.GATEWAY_LISTEN[0].host if config.GATEWAY_LISTEN else "0.0.0.0"
+
+    def _port_is_free(self, port: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((self._listen_host, port))
+                return True
+            except OSError:
+                return False
+
+    def _start_proxy(self, preferred_port: int | None, fixed_port: int | None = None) -> None:
         from localstack.utils.common import external_service_ports
 
         port = None
-        if preferred_port:
+        self.fixed_port_used = False
+        if fixed_port:
+            if self._port_is_free(fixed_port):
+                port = fixed_port
+                self.fixed_port_used = True
+            else:
+                LOG.warning(
+                    "Port %s for %s is in use; using a port of the external range instead",
+                    fixed_port,
+                    self.name,
+                )
+        if port is None and preferred_port:
             try:
                 port = external_service_ports.reserve_port(
                     preferred_port, duration=_PORT_RESERVATION_SECONDS
@@ -145,11 +225,12 @@ class ContainerResource:
                     "No free port in EXTERNAL_SERVICE_PORTS_START..EXTERNAL_SERVICE_PORTS_END"
                 ) from e
         self.external_port = port
-        self.proxy = TCPProxy(
+        proxy_class = TLSTerminatingProxy if self.tls else TCPProxy
+        self.proxy = proxy_class(
             target_address=self.target_host,
             target_port=self.target_port,
             port=port,
-            host=config.GATEWAY_LISTEN[0].host if config.GATEWAY_LISTEN else "0.0.0.0",
+            host=self._listen_host,
         )
         self.proxy.start()
 
@@ -201,7 +282,7 @@ class ContainerResource:
             self.proxy._target_port = self.target_port
 
     def _release_port(self) -> None:
-        if not self.external_port:
+        if not self.external_port or getattr(self, "fixed_port_used", False):
             return
         from localstack.utils.common import external_service_ports
 
