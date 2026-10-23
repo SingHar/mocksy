@@ -121,6 +121,13 @@ def dispatch_to_moto(context: RequestContext) -> Response:
         raw_url = get_raw_current_url(
             request.scheme, request.host, request.root_path, full_raw_path
         )
+        # upstream moto reads this flag (moto's own server sets it); moto-ext checks the type.
+        # mocksy's requests are werkzeug requests, so the flag is True.
+        if not getattr(request, "from_wsgi_server", False):
+            try:
+                request.from_wsgi_server = True
+            except AttributeError:
+                pass
         response = dispatch(request, raw_url, request.headers)
         if not response:
             # some operations are only partially implemented by moto
