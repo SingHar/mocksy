@@ -99,6 +99,8 @@ runtime = [
     "jsonpath-rw>=1.4.0",
     # version that has a built wheel
     "kclpy-ext>=3.0.0",
+    # mocksy runs with moto-ext (LocalStack's Moto build) or upstream moto. To use upstream
+    # moto, replace the next line with "moto[all]>=5.2.4" (see docs/moto.md).
     "moto-ext[all]>=5.1.22",
     "opensearch-py>=2.4.1",
     "pymongo>=4.2.0",

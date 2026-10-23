@@ -1,3 +1,5 @@
+import ast
+
 from moto import settings as moto_settings
 from moto.acm import models as acm_models
 
@@ -112,6 +114,24 @@ def describe(describe_orig, self):
     return result
 
 
+def _usage_name(usage) -> str:
+    """A certificate summary lists usages as names (``TLS_WEB_SERVER_AUTHENTICATION``).
+
+    Moto returns ``{"Name": ..., "OID": ...}`` objects; upstream moto 5.2 has already
+    turned them into their string form (``"{'Name': ...}"``) for this field.
+    """
+    if isinstance(usage, dict):
+        return usage.get("Name", "")
+    if isinstance(usage, str) and usage.startswith("{"):
+        try:
+            parsed = ast.literal_eval(usage)
+            if isinstance(parsed, dict):
+                return parsed.get("Name", usage)
+        except (ValueError, SyntaxError):
+            pass
+    return usage
+
+
 class AcmProvider(AcmApi):
     def accept_state_visitor(self, visitor: StateVisitor):
         visitor.visit(acm_models.acm_backends)
@@ -141,12 +161,7 @@ class AcmProvider(AcmApi):
         response = moto.call_moto(context)
         summaries = response.get("CertificateSummaryList") or []
         for summary in summaries:
-            if "KeyUsages" in summary:
-                summary["KeyUsages"] = [
-                    k["Name"] if isinstance(k, dict) else k for k in summary["KeyUsages"]
-                ]
-            if "ExtendedKeyUsages" in summary:
-                summary["ExtendedKeyUsages"] = [
-                    k["Name"] if isinstance(k, dict) else k for k in summary["ExtendedKeyUsages"]
-                ]
+            for key in ("KeyUsages", "ExtendedKeyUsages"):
+                if key in summary:
+                    summary[key] = [_usage_name(k) for k in summary[key]]
         return response

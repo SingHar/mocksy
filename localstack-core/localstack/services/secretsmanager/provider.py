@@ -67,6 +67,7 @@ from localstack.aws.connect import connect_to
 from localstack.services.moto import call_moto
 from localstack.state import StateVisitor
 from localstack.utils.aws import arns
+from localstack.utils.moto_compat import is_moto_ext
 from localstack.utils.patch import patch
 from localstack.utils.time import today_no_time
 
@@ -627,6 +628,9 @@ def backend_tag_resource(fn, self, secret_id, tags):
             "You can't perform this operation on the secret because it was marked for deletion."
         )
 
+    if isinstance(tags, list) and not is_moto_ext():
+        # upstream moto 5.2 takes {key: value}; moto-ext takes [{"Key": k, "Value": v}]
+        tags = {tag["Key"]: tag.get("Value", "") for tag in tags}
     return fn(self, secret_id, tags)
 
 
