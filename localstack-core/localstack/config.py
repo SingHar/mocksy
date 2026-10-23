@@ -981,6 +981,18 @@ BUCKET_MARKER_LOCAL = (
 # https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html
 LAMBDA_DISABLE_AWS_ENDPOINT_URL = is_env_true("LAMBDA_DISABLE_AWS_ENDPOINT_URL")
 
+# RDS (mocksy): run PostgreSQL instances as Docker containers. 0 records instances only.
+RDS_RUN_CONTAINERS = os.environ.get("RDS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
+
+# RDS (mocksy): image for PostgreSQL instances; {major} is the major engine version.
+RDS_POSTGRES_IMAGE = os.environ.get("RDS_POSTGRES_IMAGE", "").strip() or "postgres:{major}"
+
+# RDS (mocksy): engine version when CreateDBInstance has no EngineVersion.
+RDS_POSTGRES_DEFAULT_VERSION = os.environ.get("RDS_POSTGRES_DEFAULT_VERSION", "").strip() or "18.4"
+
+# RDS (mocksy): seconds to wait for a database to accept connections.
+RDS_START_TIMEOUT = float(os.environ.get("RDS_START_TIMEOUT", "").strip() or 180)
+
 # PUBLIC: bridge (Docker default)
 # Docker network driver for the Lambda and ECS containers. https://docs.docker.com/network/
 LAMBDA_DOCKER_NETWORK = os.environ.get("LAMBDA_DOCKER_NETWORK", "").strip()
@@ -1284,6 +1296,10 @@ STATE_SERIALIZATION_BACKEND = os.environ.get("STATE_SERIALIZATION_BACKEND", "").
 # => Move removed legacy variables to the section grouped by release (still relevant for deprecation warnings)
 # => Do *not* include any internal developer configurations that apply to host-mode only in this list.
 CONFIG_ENV_VARS = [
+    "RDS_POSTGRES_DEFAULT_VERSION",
+    "RDS_POSTGRES_IMAGE",
+    "RDS_RUN_CONTAINERS",
+    "RDS_START_TIMEOUT",
     "ALLOW_NONSTANDARD_REGIONS",
     "BOTO_WAITER_DELAY",
     "BOTO_WAITER_MAX_ATTEMPTS",
