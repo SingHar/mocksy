@@ -995,6 +995,20 @@ APPLICATION_AUTOSCALING_INTERVAL = float(
 APPLICATION_AUTOSCALING_METRIC_PERIOD = int(
     os.environ.get("APPLICATION_AUTOSCALING_METRIC_PERIOD", "").strip() or 60
 )
+# ELBv2 (mocksy): serve load balancers (routing, health checks). 0 records them only.
+ELBV2_RUN = os.environ.get("ELBV2_RUN", "1").strip() not in FALSE_STRINGS
+
+# ELBv2 (mocksy): also listen on each listener's own port (80, 443, ...) when it is free.
+ELBV2_BIND_LISTENER_PORTS = (
+    os.environ.get("ELBV2_BIND_LISTENER_PORTS", "1").strip() not in FALSE_STRINGS
+)
+
+# ELBv2 (mocksy): run target health checks. 0 treats all targets as healthy.
+ELBV2_HEALTH_CHECKS = os.environ.get("ELBV2_HEALTH_CHECKS", "1").strip() not in FALSE_STRINGS
+
+# ELBv2 (mocksy): publish AWS/ApplicationELB metrics to CloudWatch, every N seconds.
+ELBV2_PUBLISH_METRICS = os.environ.get("ELBV2_PUBLISH_METRICS", "1").strip() not in FALSE_STRINGS
+ELBV2_METRICS_INTERVAL = float(os.environ.get("ELBV2_METRICS_INTERVAL", "").strip() or 10)
 
 # ECS (mocksy): run ECS tasks as Docker containers. 0 records tasks only.
 ECS_RUN_CONTAINERS = os.environ.get("ECS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
@@ -1317,6 +1331,11 @@ CONFIG_ENV_VARS = [
     "APPLICATION_AUTOSCALING_INTERVAL",
     "APPLICATION_AUTOSCALING_METRIC_PERIOD",
     "APPLICATION_AUTOSCALING_RUN",
+    "ELBV2_BIND_LISTENER_PORTS",
+    "ELBV2_HEALTH_CHECKS",
+    "ELBV2_METRICS_INTERVAL",
+    "ELBV2_PUBLISH_METRICS",
+    "ELBV2_RUN",
     "ECS_DISABLE_AWS_ENDPOINT_URL",
     "ECS_DOCKER_NETWORK",
     "ECS_MONITOR_INTERVAL",

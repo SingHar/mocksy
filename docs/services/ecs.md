@@ -33,6 +33,11 @@ up to 5 minutes.
 - Each container gets `AWS_ENDPOINT_URL`, `AWS_REGION` and test credentials, so
   AWS SDKs in the container call mocksy.
 
+## Load balancers
+
+A service with `loadBalancers` registers its tasks in the target group. See
+[ELBv2](elbv2.md).
+
 ## Network
 
 Containers join the mocksy Docker network. The task's `privateIPv4Address`
@@ -61,5 +66,4 @@ When Docker is not available, mocksy records tasks only and logs a warning.
 ## Not supported yet
 
 - Container `dependsOn`, health checks and `stopTimeout` (stop waits 10 s).
-- Load balancer registration (ELBv2 is not in mocksy).
 - Task metadata endpoint and task IAM role credentials.

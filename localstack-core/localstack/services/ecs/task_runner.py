@@ -96,6 +96,9 @@ class TrackedTask:
     cluster_name: str
     task: Any  # moto.ecs.models.Task
     containers: list[ContainerRecord]
+    # (target group ARN, IP, port) registered for this task
+    lb_targets: list[tuple[str, str, int]] = field(default_factory=list)
+    running_since: float | None = None
 
 
 class TaskRunner:
@@ -211,6 +214,8 @@ class TaskRunner:
                 self._stopping[task_arn] = tracked
         if not tracked:
             return
+        # the load balancer stops sending requests before the containers stop
+        self._deregister_targets(tracked)
         task = tracked.task
         task._transitions = []
         task.desired_status = "STOPPED"
@@ -250,6 +255,89 @@ class TaskRunner:
             )
         return result
 
+    # ------------------------------------------------------- load balancers
+
+    def _service_of(self, tracked: TrackedTask) -> Any | None:
+        from moto.ecs.models import ecs_backends
+
+        group = getattr(tracked.task, "group", "") or ""
+        if not group.startswith(SERVICE_GROUP_PREFIX):
+            return None
+        backend = ecs_backends[tracked.account_id][tracked.region]
+        return backend.services.get(f"{tracked.cluster_name}:{group[len(SERVICE_GROUP_PREFIX) :]}")
+
+    def _register_targets(self, tracked: TrackedTask) -> None:
+        """Register the task with the target groups of its service (``loadBalancers``)."""
+        service = self._service_of(tracked)
+        if service is None or not getattr(service, "load_balancers", None):
+            return
+        elbv2 = connect_to(aws_access_key_id=tracked.account_id, region_name=tracked.region).elbv2
+        for lb in service.load_balancers:
+            target_group_arn = lb.get("targetGroupArn")
+            record = next(
+                (r for r in tracked.containers if r.name == lb.get("containerName")), None
+            )
+            if not target_group_arn or record is None or not record.network_interfaces:
+                continue
+            ip = record.network_interfaces[0]["privateIpv4Address"]
+            port = int(lb.get("containerPort") or 0)
+            try:
+                elbv2.register_targets(
+                    TargetGroupArn=target_group_arn, Targets=[{"Id": ip, "Port": port}]
+                )
+                tracked.lb_targets.append((target_group_arn, ip, port))
+            except Exception as e:
+                LOG.warning(
+                    "Cannot register task %s in %s: %s", tracked.task.task_arn, target_group_arn, e
+                )
+
+    def _deregister_targets(self, tracked: TrackedTask) -> None:
+        if not tracked.lb_targets:
+            return
+        elbv2 = connect_to(aws_access_key_id=tracked.account_id, region_name=tracked.region).elbv2
+        for target_group_arn, ip, port in tracked.lb_targets:
+            try:
+                elbv2.deregister_targets(
+                    TargetGroupArn=target_group_arn, Targets=[{"Id": ip, "Port": port}]
+                )
+            except Exception as e:
+                LOG.debug("Cannot deregister %s:%s from %s: %s", ip, port, target_group_arn, e)
+        tracked.lb_targets = []
+
+    def stop_unhealthy_target(
+        self, account_id: str, region: str, target_group_arn: str, ip: str
+    ) -> None:
+        """Replace the service task behind a target that fails health checks, as ECS does.
+
+        The service's ``healthCheckGracePeriodSeconds`` is respected.
+        """
+        with self._lock:
+            match = next(
+                (
+                    t
+                    for t in self._tasks.values()
+                    if t.account_id == account_id
+                    and t.region == region
+                    and any(tg == target_group_arn and i == ip for tg, i, _ in t.lb_targets)
+                ),
+                None,
+            )
+        if match is None:
+            return
+        service = self._service_of(match)
+        grace = float(getattr(service, "_mocksy_health_check_grace_period", 0) or 0)
+        if match.running_since and time.monotonic() - match.running_since < grace:
+            return
+        name = target_group_arn.split(":", 5)[-1]
+        self.stop(
+            match.task.task_arn,
+            f"Task failed ELB health checks in (target-group {target_group_arn})",
+            "ServiceSchedulerInitiated",
+        )
+        LOG.info(
+            "Replacing ECS task %s: it failed the health checks of %s", match.task.task_arn, name
+        )
+
     # -------------------------------------------------------------- starting
 
     def _start_task(
@@ -276,6 +364,8 @@ class TaskRunner:
             task.connectivity = "CONNECTED"
             task.connectivity_at = task.started_at
             self._update_task_ip(tracked)
+            tracked.running_since = time.monotonic()
+            self._register_targets(tracked)
         except TaskStartError as e:
             LOG.warning("ECS task %s cannot start: %s", task.task_arn, e)
             self.stop(task.task_arn, str(e), e.stop_code)
