@@ -43,6 +43,15 @@ A service with `loadBalancers` registers its tasks in the target group. See
 Containers join the mocksy Docker network. The task's `privateIPv4Address`
 is the IP of its first container on that network.
 
+Inside task containers, `localhost.localstack.cloud` points at mocksy, so RDS
+and ElastiCache endpoints and AWS SDK calls work. When mocksy's DNS server runs,
+containers use it, and subdomains (load balancers, CloudFront distributions)
+resolve too.
+
+When mocksy runs on the host instead of in Docker, start it with
+`GATEWAY_LISTEN=0.0.0.0:4566`, so containers can reach it (the same as for
+Lambda).
+
 Differences from AWS Fargate:
 
 - Each container has its own IP. In AWS, the containers of a task share one
