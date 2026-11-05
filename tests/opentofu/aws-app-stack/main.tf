@@ -18,13 +18,15 @@ provider "aws" {
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
   endpoints {
-    ec2         = var.endpoint
-    ecs         = var.endpoint
-    rds         = var.endpoint
-    elasticache = var.endpoint
-    cloudfront  = var.endpoint
-    iam         = var.endpoint
-    sts         = var.endpoint
+    ec2                    = var.endpoint
+    ecs                    = var.endpoint
+    applicationautoscaling = var.endpoint
+    cloudwatch             = var.endpoint
+    rds                    = var.endpoint
+    elasticache            = var.endpoint
+    cloudfront             = var.endpoint
+    iam                    = var.endpoint
+    sts                    = var.endpoint
   }
 }
 
@@ -51,7 +53,7 @@ resource "aws_ecs_task_definition" "api" {
   cpu                      = "256"
   memory                   = "512"
   container_definitions = jsonencode([{
-    name = "api", image = "nginx:stable", essential = true,
+    name         = "api", image = "nginx:stable", essential = true,
     portMappings = [{ containerPort = 80 }]
   }])
 }
@@ -63,6 +65,38 @@ resource "aws_ecs_service" "api" {
   desired_count   = 2
   launch_type     = "FARGATE"
   network_configuration { subnets = [aws_subnet.a.id, aws_subnet.b.id] }
+}
+
+resource "aws_appautoscaling_target" "api" {
+  service_namespace  = "ecs"
+  resource_id        = "service/${aws_ecs_cluster.app.name}/${aws_ecs_service.api.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  min_capacity       = 1
+  max_capacity       = 4
+}
+
+# scale on queue depth, as for Horizon workers
+resource "aws_appautoscaling_policy" "queue_depth" {
+  name               = "queue-depth"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.api.service_namespace
+  resource_id        = aws_appautoscaling_target.api.resource_id
+  scalable_dimension = aws_appautoscaling_target.api.scalable_dimension
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = 10
+    scale_out_cooldown = 60
+    scale_in_cooldown  = 120
+    customized_metric_specification {
+      namespace   = "App/Queue"
+      metric_name = "Depth"
+      statistic   = "Maximum"
+      dimensions {
+        name  = "Queue"
+        value = "default"
+      }
+    }
+  }
 }
 
 resource "aws_db_subnet_group" "db" {

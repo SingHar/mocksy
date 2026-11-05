@@ -14,6 +14,17 @@ def acm():
     return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
 
 
+@aws_provider(api="application-autoscaling")
+def application_autoscaling():
+    from localstack.services.application_autoscaling.provider import (
+        ApplicationAutoscalingProvider,
+    )
+    from localstack.services.moto import MotoFallbackDispatcher
+
+    provider = ApplicationAutoscalingProvider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
+
+
 @aws_provider()
 def apigateway():
     from localstack.services.apigateway.next_gen.provider import ApigatewayNextGenProvider
