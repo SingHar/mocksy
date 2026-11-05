@@ -244,7 +244,29 @@ class Scaler:
 
         predefined = configuration.get("PredefinedMetricSpecification")
         customized = configuration.get("CustomizedMetricSpecification")
-        if predefined:
+        if predefined and predefined.get("PredefinedMetricType") == "ALBRequestCountPerTarget":
+            # ResourceLabel: app/<lb-name>/<lb-id>/targetgroup/<tg-name>/<tg-id>
+            label = predefined.get("ResourceLabel") or ""
+            target_group = label[label.find("targetgroup/") :] if "targetgroup/" in label else ""
+            if not target_group:
+                self._warn_once(
+                    f"{policy.policy_arn}:label",
+                    "Policy %s: ALBRequestCountPerTarget needs a ResourceLabel",
+                    policy.policy_name,
+                )
+                return None, ""
+            value = self._latest(
+                clients,
+                "AWS/ApplicationELB",
+                "RequestCountPerTarget",
+                [{"Name": "TargetGroup", "Value": target_group}],
+                "Sum",
+            )
+            if value is None:
+                # no requests in the period: AWS reports no datapoint, scale in toward 0 requests
+                value = 0.0
+            label = "ALBRequestCountPerTarget"
+        elif predefined:
             metric_type = predefined.get("PredefinedMetricType")
             metric_name = PREDEFINED_ECS_METRICS.get(metric_type)
             if not metric_name:

@@ -11,6 +11,10 @@ Fixes on top of Moto:
   internal error instead. The provider uses the default group inside Moto and
   keeps the stored configuration as sent, so OpenTofu/Terraform shows no change
   on the next plan.
+- Moto gives a network interface ``private_dns_name`` only when the VPC has DNS
+  hostnames turned on (custom VPCs do not by default), but its ECS tasks always
+  read it, so no task could start in such a VPC. The attribute now defaults to
+  None.
 - With Fargate, memory is usually set on the task definition and not on each
   container. Moto adds up container memory to place tasks and fails with
   TypeError when a container has none. The provider counts such containers
@@ -23,15 +27,21 @@ from types import SimpleNamespace
 from typing import Any
 
 from moto.ec2.models import ec2_backends
+from moto.ec2.models.elastic_network_interfaces import NetworkInterface
 from moto.ecs.models import EC2ContainerServiceBackend, Service, Task, ecs_backends
 
+from localstack.aws.api import RequestContext, handler
 from localstack.aws.api.ecs import EcsApi
 from localstack.services.ecs.task_runner import TASK_RUNNER
+from localstack.services.moto import call_moto
 from localstack.services.plugins import ServiceLifecycleHook
 from localstack.state import StateVisitor
 from localstack.utils.patch import patch
 
 LOG = logging.getLogger(__name__)
+
+# see the module docstring; an instance value (DNS hostnames on) still takes precedence
+NetworkInterface.private_dns_name = None
 
 
 def _default_security_group_id(account_id: str, region: str, subnet_id: str) -> str | None:
@@ -182,9 +192,64 @@ def _list_tasks(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
     return tasks
 
 
+def _grace_period(request: dict) -> int | None:
+    value = request.get("healthCheckGracePeriodSeconds")
+    return int(value) if value is not None else None
+
+
+def _add_grace_period(service: dict | None) -> None:
+    """Moto drops healthCheckGracePeriodSeconds; it is kept here and returned, as in AWS."""
+    if not service:
+        return
+    from moto.ecs.models import ecs_backends
+
+    for regions in ecs_backends.values():
+        for backend in regions.values():
+            stored = next(
+                (s for s in backend.services.values() if s.arn == service.get("serviceArn")), None
+            )
+            if stored is not None:
+                grace = getattr(stored, "_mocksy_health_check_grace_period", None)
+                if grace is not None:
+                    service["healthCheckGracePeriodSeconds"] = grace
+                return
+
+
+def _store_grace_period(context, service_arn: str | None, grace: int | None) -> None:
+    if grace is None or not service_arn:
+        return
+    backend = ecs_backends[context.account_id][context.region]
+    for stored in backend.services.values():
+        if stored.arn == service_arn:
+            stored._mocksy_health_check_grace_period = grace
+
+
 class EcsProvider(EcsApi, ServiceLifecycleHook):
     def accept_state_visitor(self, visitor: StateVisitor):
         visitor.visit(ecs_backends)
+
+    @handler("CreateService", expand=False)
+    def create_service(self, context: RequestContext, request: dict):
+        response = call_moto(context)
+        service = response.get("service") or {}
+        _store_grace_period(context, service.get("serviceArn"), _grace_period(request))
+        _add_grace_period(service)
+        return response
+
+    @handler("UpdateService", expand=False)
+    def update_service(self, context: RequestContext, request: dict):
+        response = call_moto(context)
+        service = response.get("service") or {}
+        _store_grace_period(context, service.get("serviceArn"), _grace_period(request))
+        _add_grace_period(service)
+        return response
+
+    @handler("DescribeServices", expand=False)
+    def describe_services(self, context: RequestContext, request: dict):
+        response = call_moto(context)
+        for service in response.get("services") or []:
+            _add_grace_period(service)
+        return response
 
     def on_before_stop(self):
         TASK_RUNNER.shutdown()

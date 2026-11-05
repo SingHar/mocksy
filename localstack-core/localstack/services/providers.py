@@ -181,6 +181,15 @@ def elasticache():
 
 
 @aws_provider()
+def elbv2():
+    from localstack.services.elbv2.provider import Elbv2Provider
+    from localstack.services.moto import MotoFallbackDispatcher
+
+    provider = Elbv2Provider()
+    return Service.for_provider(provider, dispatch_table_factory=MotoFallbackDispatcher)
+
+
+@aws_provider()
 def es():
     from localstack.services.es.provider import EsProvider
 

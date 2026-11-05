@@ -13,6 +13,7 @@ Every `APPLICATION_AUTOSCALING_INTERVAL` seconds, for each scalable target with
 | Policy type | How the new capacity is found |
 |---|---|
 | Target tracking, predefined `ECSServiceAverageCPUUtilization` or `ECSServiceAverageMemoryUtilization` | Reads `AWS/ECS` `CPUUtilization` or `MemoryUtilization` (dimensions `ClusterName`, `ServiceName`) from CloudWatch. `ceil(current × value / target)`. |
+| Target tracking, predefined `ALBRequestCountPerTarget` (with `ResourceLabel`) | Reads `AWS/ApplicationELB` `RequestCountPerTarget` (Sum) of the target group, published by mocksy's [load balancers](elbv2.md). |
 | Target tracking, `CustomizedMetricSpecification` | Reads the metric (namespace, name, dimensions, statistic) from CloudWatch, for example a queue depth that your app publishes. Same formula. |
 | Step scaling | Acts when a CloudWatch alarm that has the policy ARN in `AlarmActions` is in `ALARM`. The step adjustment is chosen by `metric value − alarm threshold`. `ChangeInCapacity`, `PercentChangeInCapacity` (with `MinAdjustmentMagnitude`) and `ExactCapacity` are supported. |
 
@@ -61,7 +62,7 @@ jobs and 1 task, the service goes to 4 tasks (or `max_capacity`).
   target tracking alarms). mocksy acts at the next evaluation, so local tests
   run fast. Use the cooldowns to slow it down.
 - The alarms that AWS creates for target tracking policies are not created.
-- `ALBRequestCountPerTarget`, other predefined metrics, metric math,
+- Other predefined metrics, metric math,
   predictive scaling and scheduled actions are not evaluated.
 - Only ECS services are scaled. Other namespaces are recorded only.
 
