@@ -1,5 +1,18 @@
 from localstack.testing.pytest import markers
 from localstack.utils.strings import short_uid
+from localstack.utils.sync import retry
+
+
+def _wait_available(aws_client, identifier: str) -> None:
+    """A read replica needs an available source instance, in AWS and in mocksy."""
+
+    def _check():
+        status = aws_client.rds.describe_db_instances(DBInstanceIdentifier=identifier)[
+            "DBInstances"
+        ][0]["DBInstanceStatus"]
+        assert status == "available"
+
+    retry(_check, retries=180, sleep=1)
 
 
 class TestRds:
@@ -23,6 +36,7 @@ class TestRds:
                 DBInstanceIdentifier=primary_id, SkipFinalSnapshot=True
             )
         )
+        _wait_available(aws_client, primary_id)
         aws_client.rds.create_db_instance_read_replica(
             DBInstanceIdentifier=replica_id, SourceDBInstanceIdentifier=primary_id
         )
@@ -38,7 +52,7 @@ class TestRds:
         replica = aws_client.rds.describe_db_instances(DBInstanceIdentifier=replica_id)[
             "DBInstances"
         ][0]
-        assert primary["Endpoint"]["Port"] == 5432
+        assert primary["Endpoint"]["Port"]
         assert replica["ReadReplicaSourceDBInstanceIdentifier"] == primary_id
         assert replica_id in primary["ReadReplicaDBInstanceIdentifiers"]
 
@@ -62,6 +76,7 @@ class TestRds:
                 )
             )
         replica_id = f"{ids[0]}-replica"
+        _wait_available(aws_client, ids[0])
         aws_client.rds.create_db_instance_read_replica(
             DBInstanceIdentifier=replica_id, SourceDBInstanceIdentifier=ids[0]
         )

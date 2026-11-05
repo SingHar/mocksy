@@ -1024,6 +1024,34 @@ ECS_DISABLE_AWS_ENDPOINT_URL = is_env_true("ECS_DISABLE_AWS_ENDPOINT_URL")
 
 # ECS (mocksy): seconds between checks of task containers and service task counts.
 ECS_MONITOR_INTERVAL = float(os.environ.get("ECS_MONITOR_INTERVAL", "2").strip() or 2)
+# ElastiCache (mocksy): run Valkey, Redis and Memcached nodes as Docker containers.
+ELASTICACHE_RUN_CONTAINERS = (
+    os.environ.get("ELASTICACHE_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
+)
+
+# ElastiCache (mocksy): images; {major} and {minor} come from the engine version (8.1 -> 8, 8.1).
+ELASTICACHE_VALKEY_IMAGE = (
+    os.environ.get("ELASTICACHE_VALKEY_IMAGE", "").strip() or "valkey/valkey:{major}"
+)
+ELASTICACHE_REDIS_IMAGE = os.environ.get("ELASTICACHE_REDIS_IMAGE", "").strip() or "redis:{major}"
+ELASTICACHE_MEMCACHED_IMAGE = (
+    os.environ.get("ELASTICACHE_MEMCACHED_IMAGE", "").strip() or "memcached:{minor}"
+)
+
+# ElastiCache (mocksy): seconds to wait for a node to answer.
+ELASTICACHE_START_TIMEOUT = float(os.environ.get("ELASTICACHE_START_TIMEOUT", "").strip() or 60)
+
+# RDS (mocksy): run PostgreSQL instances as Docker containers. 0 records instances only.
+RDS_RUN_CONTAINERS = os.environ.get("RDS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
+
+# RDS (mocksy): image for PostgreSQL instances; {major} is the major engine version.
+RDS_POSTGRES_IMAGE = os.environ.get("RDS_POSTGRES_IMAGE", "").strip() or "postgres:{major}"
+
+# RDS (mocksy): engine version when CreateDBInstance has no EngineVersion.
+RDS_POSTGRES_DEFAULT_VERSION = os.environ.get("RDS_POSTGRES_DEFAULT_VERSION", "").strip() or "18.4"
+
+# RDS (mocksy): seconds to wait for a database to accept connections.
+RDS_START_TIMEOUT = float(os.environ.get("RDS_START_TIMEOUT", "").strip() or 180)
 
 # PUBLIC: bridge (Docker default)
 # Docker network driver for the Lambda and ECS containers. https://docs.docker.com/network/
@@ -1341,6 +1369,15 @@ CONFIG_ENV_VARS = [
     "ECS_MONITOR_INTERVAL",
     "ECS_REMOVE_CONTAINERS",
     "ECS_RUN_CONTAINERS",
+    "ELASTICACHE_MEMCACHED_IMAGE",
+    "ELASTICACHE_REDIS_IMAGE",
+    "ELASTICACHE_RUN_CONTAINERS",
+    "ELASTICACHE_START_TIMEOUT",
+    "ELASTICACHE_VALKEY_IMAGE",
+    "RDS_POSTGRES_DEFAULT_VERSION",
+    "RDS_POSTGRES_IMAGE",
+    "RDS_RUN_CONTAINERS",
+    "RDS_START_TIMEOUT",
     "ALLOW_NONSTANDARD_REGIONS",
     "BOTO_WAITER_DELAY",
     "BOTO_WAITER_MAX_ATTEMPTS",
