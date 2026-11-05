@@ -36,6 +36,7 @@ from localstack.utils.container_networking import (
     get_main_container_network,
 )
 from localstack.utils.docker_utils import DOCKER_CLIENT
+from localstack.utils.urls import localstack_host
 
 LOG = logging.getLogger(__name__)
 
@@ -328,6 +329,7 @@ class TaskRunner:
                 LABEL_CONTAINER: record.name,
             },
             mem_limit=mem_limit,
+            **self._name_resolution(network),
         )
         DOCKER_CLIENT.start_container(container_id)
         record.runtime_id = container_id
@@ -339,6 +341,31 @@ class TaskRunner:
             ]
         except Exception as e:
             LOG.debug("Cannot read IP of container %s: %s", record.docker_name, e)
+
+    @staticmethod
+    def _name_resolution(network: str | None) -> dict[str, Any]:
+        """Let the container reach mocksy by its host name, as AWS SDKs and endpoints use it.
+
+        RDS and ElastiCache endpoints and ``AWS_ENDPOINT_URL`` use the ``LOCALSTACK_HOST``
+        host (``localhost.localstack.cloud``). Inside a container that name would point
+        at the container itself, so it is mapped to mocksy's address on the network.
+        When mocksy's DNS server runs, the container also uses it, so subdomains (load
+        balancers, CloudFront distributions) resolve too.
+        """
+        try:
+            ip = get_endpoint_for_network(network)
+        except Exception as e:
+            LOG.debug("Cannot find mocksy's address on network %s: %s", network, e)
+            return {}
+        options: dict[str, Any] = {"additional_flags": f"--add-host {localstack_host().host}:{ip}"}
+        try:
+            from localstack.dns import server as dns_server
+
+            if dns_server.is_server_running():
+                options["dns"] = ip
+        except Exception:
+            pass
+        return options
 
     def _environment(
         self, tracked: TrackedTask, definition: dict[str, Any], override: dict[str, Any]

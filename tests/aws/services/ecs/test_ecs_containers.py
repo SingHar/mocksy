@@ -250,3 +250,41 @@ class TestEcsContainers:
         # without backoff a new task would start every monitor interval
         time.sleep(8)
         assert len(_stopped()) <= 3
+
+    @markers.aws.only_localstack
+    def test_container_reaches_mocksy_by_host_name(self, aws_client, cluster, subnet_id):
+        """RDS and ElastiCache endpoints use localhost.localstack.cloud; it must point at mocksy."""
+        from localstack import config
+
+        if not config.is_in_docker and config.GATEWAY_LISTEN[0].host in ("127.0.0.1", "localhost"):
+            pytest.skip("mocksy on the host listens on loopback; set GATEWAY_LISTEN=0.0.0.0:4566")
+        script = (
+            "import socket, os;"
+            "host = os.environ['MOCKSY_HOST'];"
+            "socket.create_connection((host, int(os.environ['MOCKSY_PORT'])), timeout=5).close();"
+            "print('reached ' + host, flush=True)"
+        )
+        group = f"/ecs/{short_uid()}"
+        aws_client.logs.create_log_group(logGroupName=group)
+        from localstack.utils.urls import localstack_host
+
+        family = _register(
+            aws_client,
+            command=script,
+            environment=[
+                {"name": "MOCKSY_HOST", "value": localstack_host().host},
+                {"name": "MOCKSY_PORT", "value": str(config.GATEWAY_LISTEN[0].port)},
+            ],
+            logConfiguration={
+                "logDriver": "awslogs",
+                "options": {"awslogs-group": group, "awslogs-stream-prefix": "app"},
+            },
+        )
+        task_arn = aws_client.ecs.run_task(
+            cluster=cluster,
+            taskDefinition=family,
+            launchType="FARGATE",
+            networkConfiguration={"awsvpcConfiguration": {"subnets": [subnet_id]}},
+        )["tasks"][0]["taskArn"]
+        task = _wait_status(aws_client, cluster, task_arn, "STOPPED")
+        assert task["containers"][0]["exitCode"] == 0, task.get("stoppedReason")
