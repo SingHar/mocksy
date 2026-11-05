@@ -15,6 +15,8 @@ that host on mocksy's gateway (port 4566, HTTP or HTTPS) goes through these step
      mocksy's S3. ``/`` returns ``DefaultRootObject``.
    - Custom origin: the request is sent to ``<domain>:<port><OriginPath><path>``
      with the scheme from ``OriginProtocolPolicy`` and the origin's custom headers.
+     Origins under the ``LOCALSTACK_HOST`` host (for example a load balancer)
+     are reached through mocksy's gateway with ``Host`` set to the origin.
 6. ``CustomErrorResponses`` replace origin errors (for example 403/404 to
    ``/index.html`` with 200 for single-page apps).
 7. Responses carry ``X-Cache`` (``Hit``/``Miss from cloudfront``), ``Via`` and
@@ -76,6 +78,24 @@ _HOP_BY_HOP = {
 
 def distribution_domain(distribution_id: str) -> str:
     return f"{distribution_id.lower()}.cloudfront.{localstack_host().host}"
+
+
+def _gateway_url_for(domain: str, scheme: str) -> str | None:
+    """Return mocksy's gateway URL when ``domain`` is a mocksy host name, else None.
+
+    Names under ``LOCALSTACK_HOST`` (load balancers, other distributions) resolve
+    to 127.0.0.1 or not at all inside mocksy, and the origin port (80, 443) is
+    not where mocksy listens. The gateway serves every such name by ``Host``.
+    """
+    from localstack import config
+
+    host = localstack_host().host.lower()
+    name = domain.lower().rstrip(".")
+    if name != host and not name.endswith("." + host):
+        return None
+    listen = config.GATEWAY_LISTEN[0]
+    address = "127.0.0.1" if listen.host in ("0.0.0.0", "::", "") else listen.host
+    return f"{scheme}://{address}:{listen.port}"
 
 
 @dataclass
@@ -358,6 +378,11 @@ class CloudFrontEdge:
         port = custom.get("HTTPSPort", 443) if scheme == "https" else custom.get("HTTPPort", 80)
         domain = origin["DomainName"]
         url = f"{scheme}://{domain}:{port}{path}" + (f"?{query}" if query else "")
+        gateway_url = _gateway_url_for(domain, scheme)
+        if gateway_url:
+            # a mocksy resource (for example a load balancer): send the request to
+            # mocksy's own gateway, which routes it by Host
+            url = gateway_url + path + (f"?{query}" if query else "")
 
         headers = {k: v for k, v in request.headers.items() if k.lower() not in _HOP_BY_HOP}
         headers["Host"] = domain

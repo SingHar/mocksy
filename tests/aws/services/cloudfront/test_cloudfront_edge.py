@@ -203,3 +203,29 @@ class TestCloudfrontEdge:
             DefaultCacheBehavior=_behavior("site"),
         )
         assert _get(distribution, "/index.html").status_code == 403
+
+    @markers.aws.only_localstack
+    def test_origin_on_mocksy_host(self, create_distribution, site_bucket):
+        """Origins under the mocksy host (load balancers, other distributions) go through the gateway."""
+        inner = create_distribution(
+            DefaultRootObject="index.html",
+            Origins={"Quantity": 1, "Items": [_s3_origin(site_bucket)]},
+            DefaultCacheBehavior=_behavior("site"),
+        )
+        local_origin = {
+            "Id": "inner",
+            "DomainName": inner["DomainName"],
+            "CustomOriginConfig": {
+                "HTTPPort": 80,
+                "HTTPSPort": 443,
+                "OriginProtocolPolicy": "http-only",
+            },
+        }
+        outer = create_distribution(
+            Origins={"Quantity": 1, "Items": [local_origin]},
+            DefaultCacheBehavior=_behavior("inner"),
+        )
+
+        response = _get(outer, "/assets/app.js")
+        assert response.status_code == 200
+        assert response.text == "console.log(1)"

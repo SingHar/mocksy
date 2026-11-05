@@ -31,7 +31,9 @@ curl https://e1abc2def3.cloudfront.localhost.localstack.cloud:4566/index.html
    - Custom origin: the request goes to `<DomainName>:<port><OriginPath><path>`
      with the scheme from `OriginProtocolPolicy`, the origin's `CustomHeaders`,
      `Host` set to the origin domain, and `X-Forwarded-For` and `Via`. TLS
-     certificates of origins are not checked.
+     certificates of origins are not checked. Origins under the mocksy host
+     (`*.localhost.localstack.cloud`, such as a load balancer's DNS name) go
+     to mocksy's gateway instead of the origin port.
    - The query string goes to the origin when `ForwardedValues.QueryString` is
      true, or when the behaviour uses a cache policy.
 6. **CustomErrorResponses:** an origin error with a configured `ErrorCode`
