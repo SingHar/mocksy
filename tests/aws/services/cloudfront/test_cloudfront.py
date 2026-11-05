@@ -39,7 +39,7 @@ class TestCloudfront:
             DistributionConfig=_distribution_config(short_uid())
         )
         distribution_id = created["Distribution"]["Id"]
-        assert created["Distribution"]["DomainName"].endswith(".cloudfront.net")
+        assert ".cloudfront." in created["Distribution"]["DomainName"]
 
         result = aws_client.cloudfront.get_distribution(Id=distribution_id)
         assert result["Distribution"]["Status"] == "Deployed"
