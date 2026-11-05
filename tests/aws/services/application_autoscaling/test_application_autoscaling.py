@@ -266,6 +266,8 @@ class TestApplicationAutoscalingScaling:
         )
         # 175 is 75 above the threshold: the second step, +2 tasks
         _put_metric(aws_client, namespace, "Backlog", 175, [])
+        # the step comes from the alarm's 60-second window, not the scaler's metric period
+        time.sleep(4)
         aws_client.cloudwatch.set_alarm_state(
             AlarmName=alarm, StateValue="ALARM", StateReason="test"
         )

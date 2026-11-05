@@ -325,17 +325,22 @@ class Scaler:
         metric_name: str | None,
         dimensions: list[dict[str, str]],
         statistic: str,
+        period: int | None = None,
+        periods: int = 3,
     ) -> float | None:
-        """Latest datapoint of the metric over the last minutes, or None without data."""
+        """Latest datapoint of the metric over the last ``periods`` periods, or None without data.
+
+        ``period`` defaults to ``APPLICATION_AUTOSCALING_METRIC_PERIOD``.
+        """
         if not namespace or not metric_name:
             return None
         end = _now()
-        period = max(int(config.APPLICATION_AUTOSCALING_METRIC_PERIOD), 1)
+        period = max(int(period or config.APPLICATION_AUTOSCALING_METRIC_PERIOD), 1)
         result = clients.cloudwatch.get_metric_statistics(
             Namespace=namespace,
             MetricName=metric_name,
             Dimensions=dimensions,
-            StartTime=end - timedelta(seconds=period * 3),
+            StartTime=end - timedelta(seconds=period * max(periods, 1)),
             EndTime=end + timedelta(seconds=1),
             Period=period,
             Statistics=[statistic],
@@ -359,6 +364,9 @@ class Scaler:
             alarm.get("MetricName"),
             alarm.get("Dimensions") or [],
             alarm.get("Statistic") or "Average",
+            # the alarm went into ALARM on the data of its own evaluation window
+            period=alarm.get("Period"),
+            periods=int(alarm.get("EvaluationPeriods") or 1),
         )
         if value is None:
             return None, ""
