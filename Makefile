@@ -62,6 +62,10 @@ install-dev: venv         ## Install developer requirements into venv
 	$(VENV_RUN); $(PIP_CMD) install -r requirements-dev.txt
 	$(VENV_RUN); $(PIP_CMD) install $(PIP_OPTS) -e ".[dev]"
 
+install-dev-upstream-moto: install-dev   ## Install developer requirements with upstream moto instead of moto-ext (mocksy)
+	$(VENV_RUN); $(PIP_CMD) uninstall -y moto-ext
+	$(VENV_RUN); $(PIP_CMD) install "moto[all]$(MOTO_VERSION)"
+
 install-dev-types: venv   ## Install developer requirements incl. type hints into venv
 	$(VENV_RUN); $(PIP_CMD) install -r requirements-typehint.txt
 	$(VENV_RUN); $(PIP_CMD) install $(PIP_OPTS) -e ".[typehint]"
@@ -165,4 +169,4 @@ clean-dist:				  ## Clean up python distribution directories
 	rm -rf dist/ build/
 	rm -rf localstack-core/*.egg-info
 
-.PHONY: usage freeze install-basic install-runtime install-test install-dev install entrypoints dist publish coveralls start docker-run-tests docker-cp-coverage test test-coverage lint lint-modified format format-modified asf-regenerate init-precommit clean clean-dist upgrade-pinned-dependencies
+.PHONY: install-dev-upstream-moto usage freeze install-basic install-runtime install-test install-dev install entrypoints dist publish coveralls start docker-run-tests docker-cp-coverage test test-coverage lint lint-modified format format-modified asf-regenerate init-precommit clean clean-dist upgrade-pinned-dependencies

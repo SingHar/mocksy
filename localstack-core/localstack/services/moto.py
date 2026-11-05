@@ -9,7 +9,6 @@ from functools import lru_cache
 
 import moto.backends as moto_backends
 from moto.core.base_backend import BackendDict
-from moto.core.exceptions import RESTError
 from rolo.router import RegexConverter
 from werkzeug.exceptions import NotFound
 from werkzeug.routing import Map, Rule
@@ -31,6 +30,7 @@ from localstack.constants import DEFAULT_AWS_ACCOUNT_ID
 from localstack.constants import VERSION as LOCALSTACK_VERSION
 from localstack.http import Response
 from localstack.http.request import Request, get_full_raw_path, get_raw_current_url
+from localstack.utils.moto_compat import RESTError, to_moto_request
 
 MotoDispatcher = Callable[[Request, str, dict], Response]
 
@@ -121,6 +121,8 @@ def dispatch_to_moto(context: RequestContext) -> Response:
         raw_url = get_raw_current_url(
             request.scheme, request.host, request.root_path, full_raw_path
         )
+        # upstream moto needs its own request class (see moto_compat); moto-ext takes ours
+        request = to_moto_request(request, raw_url, full_raw_path)
         response = dispatch(request, raw_url, request.headers)
         if not response:
             # some operations are only partially implemented by moto

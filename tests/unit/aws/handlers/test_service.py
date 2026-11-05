@@ -1,8 +1,7 @@
 from collections.abc import Iterable
 
 import pytest
-from moto.core.exceptions import RESTError, ServiceException
-from moto.ec2.exceptions import EC2_ERROR_RESPONSE
+from moto.core.exceptions import ServiceException
 
 from localstack.aws.api import CommonServiceException, RequestContext
 from localstack.aws.chain import HandlerChain
@@ -11,6 +10,7 @@ from localstack.aws.handlers.service import ServiceExceptionSerializer, ServiceR
 from localstack.aws.protocol.serializer import create_serializer
 from localstack.http import Request, Response
 from localstack.utils.catalog.common import AwsServiceSupportAtRuntime
+from localstack.utils.moto_compat import RESTError, is_moto_ext
 
 
 @pytest.fixture
@@ -255,7 +255,10 @@ class TestServiceExceptionSerializer:
         assert not context.service_exception.sender_fault
         assert context.service_exception.status_code == 400
 
+    @pytest.mark.skipif(not is_moto_ext(), reason="uses the error templates of moto-ext")
     def test_moto_rest_error_is_translated(self, service_response_handler_chain):
+        from moto.ec2.exceptions import EC2_ERROR_RESPONSE
+
         # Redefine exception here but use the right base exc. This is to improve tolerance against Moto refactors.
         class InvalidKeyPairNameError(RESTError):
             code = 400

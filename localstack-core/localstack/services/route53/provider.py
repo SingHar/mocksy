@@ -15,6 +15,7 @@ from localstack.aws.api.route53 import (
     DNSName,
     GetChangeResponse,
     GetHealthCheckResponse,
+    GetHostedZoneResponse,
     HealthCheck,
     HealthCheckId,
     HostedZoneConfig,
@@ -29,6 +30,16 @@ from localstack.services.moto import call_moto
 from localstack.services.plugins import ServiceLifecycleHook
 from localstack.services.route53.models import route53_stores
 from localstack.state import StateVisitor
+
+
+def _clean_default_delegation_set(response: dict) -> None:
+    """AWS returns no CallerReference for a zone's default delegation set (Id is empty).
+
+    Upstream moto 5.2 adds one (``DelSet_<zone>``); moto-ext does not.
+    """
+    delegation_set = response.get("DelegationSet")
+    if delegation_set and not delegation_set.get("Id"):
+        delegation_set.pop("CallerReference", None)
 
 
 class Route53Provider(Route53Api, ServiceLifecycleHook):
@@ -83,6 +94,14 @@ class Route53Provider(Route53Api, ServiceLifecycleHook):
             response["VPC"]["VPCId"] = response["VPC"]["VPCId"] or vpc.get("VPCId", "")
             response["VPC"]["VPCRegion"] = response["VPC"]["VPCRegion"] or vpc.get("VPCRegion", "")
 
+        _clean_default_delegation_set(response)
+        return response
+
+    def get_hosted_zone(
+        self, context: RequestContext, id: ResourceId, **kwargs
+    ) -> GetHostedZoneResponse:
+        response = call_moto(context)
+        _clean_default_delegation_set(response)
         return response
 
     def get_change(self, context: RequestContext, id: ResourceId, **kwargs) -> GetChangeResponse:

@@ -24,10 +24,12 @@ class ExceptionLogger(ExceptionHandler):
         try:
             import moto.core.exceptions
 
+            from localstack.utils.moto_compat import RESTError
+
             self._skip_exceptions(
                 ServiceException,
                 moto.core.exceptions.ServiceException,
-                moto.core.exceptions.RESTError,
+                RESTError,
             )
         except (ModuleNotFoundError, AttributeError):
             # Moto may not be available in stripped-down versions of LocalStack, like LocalStack S3 image.
