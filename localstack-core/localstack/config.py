@@ -981,6 +981,21 @@ BUCKET_MARKER_LOCAL = (
 # https://docs.aws.amazon.com/sdkref/latest/guide/feature-ss-endpoints.html
 LAMBDA_DISABLE_AWS_ENDPOINT_URL = is_env_true("LAMBDA_DISABLE_AWS_ENDPOINT_URL")
 
+# ECS (mocksy): run ECS tasks as Docker containers. 0 records tasks only.
+ECS_RUN_CONTAINERS = os.environ.get("ECS_RUN_CONTAINERS", "1").strip() not in FALSE_STRINGS
+
+# ECS (mocksy): Docker network for task containers. Empty: the LocalStack network.
+ECS_DOCKER_NETWORK = os.environ.get("ECS_DOCKER_NETWORK", "").strip()
+
+# ECS (mocksy): remove task containers when tasks stop. 0 keeps them for debugging.
+ECS_REMOVE_CONTAINERS = os.environ.get("ECS_REMOVE_CONTAINERS", "1").strip() not in FALSE_STRINGS
+
+# ECS (mocksy): do not set AWS_ENDPOINT_URL in task containers.
+ECS_DISABLE_AWS_ENDPOINT_URL = is_env_true("ECS_DISABLE_AWS_ENDPOINT_URL")
+
+# ECS (mocksy): seconds between checks of task containers and service task counts.
+ECS_MONITOR_INTERVAL = float(os.environ.get("ECS_MONITOR_INTERVAL", "2").strip() or 2)
+
 # PUBLIC: bridge (Docker default)
 # Docker network driver for the Lambda and ECS containers. https://docs.docker.com/network/
 LAMBDA_DOCKER_NETWORK = os.environ.get("LAMBDA_DOCKER_NETWORK", "").strip()
@@ -1284,6 +1299,11 @@ STATE_SERIALIZATION_BACKEND = os.environ.get("STATE_SERIALIZATION_BACKEND", "").
 # => Move removed legacy variables to the section grouped by release (still relevant for deprecation warnings)
 # => Do *not* include any internal developer configurations that apply to host-mode only in this list.
 CONFIG_ENV_VARS = [
+    "ECS_DISABLE_AWS_ENDPOINT_URL",
+    "ECS_DOCKER_NETWORK",
+    "ECS_MONITOR_INTERVAL",
+    "ECS_REMOVE_CONTAINERS",
+    "ECS_RUN_CONTAINERS",
     "ALLOW_NONSTANDARD_REGIONS",
     "BOTO_WAITER_DELAY",
     "BOTO_WAITER_MAX_ATTEMPTS",

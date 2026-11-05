@@ -1,7 +1,8 @@
 """ECS provider.
 
-Phase 1: operations are handled by Moto through the MotoFallbackDispatcher.
-Tasks are recorded but no containers run yet (see issue #1, phase 2).
+Operations are handled by Moto through the MotoFallbackDispatcher. Tasks run as
+Docker containers (see ``task_runner``): RunTask and StartTask start them,
+StopTask stops them, and services keep ``desiredCount`` tasks running.
 
 Fixes on top of Moto:
 - ``awsvpcConfiguration.securityGroups`` is optional in AWS. When it is missing,
@@ -25,6 +26,7 @@ from moto.ec2.models import ec2_backends
 from moto.ecs.models import EC2ContainerServiceBackend, Service, Task, ecs_backends
 
 from localstack.aws.api.ecs import EcsApi
+from localstack.services.ecs.task_runner import TASK_RUNNER
 from localstack.services.plugins import ServiceLifecycleHook
 from localstack.state import StateVisitor
 from localstack.utils.patch import patch
@@ -121,6 +123,71 @@ EC2ContainerServiceBackend._calculate_task_resource_requirements = staticmethod(
 )
 
 
+@patch(EC2ContainerServiceBackend.run_task)
+def _run_task(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
+    tasks = fn(self, *args, **kwargs)
+    for task in tasks:
+        TASK_RUNNER.launch(self, task)
+    return tasks
+
+
+@patch(EC2ContainerServiceBackend.start_task)
+def _start_task(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
+    tasks = fn(self, *args, **kwargs)
+    for task in tasks:
+        TASK_RUNNER.launch(self, task)
+    return tasks
+
+
+@patch(EC2ContainerServiceBackend.stop_task)
+def _stop_task(fn, self: EC2ContainerServiceBackend, cluster_str: str, task_str: str, reason: str):
+    task_id = task_str.split("/")[-1]
+    for task in self.tasks.get(cluster_str.split("/")[-1], {}).values():
+        if task.task_arn.endswith(task_id) and task.desired_status == "STOPPED":
+            # AWS returns a task that has already stopped without changing it
+            return task
+    task = fn(self, cluster_str, task_str, reason)
+    TASK_RUNNER.stop(task.task_arn, reason or "Task stopped by user", "UserInitiated")
+    return task
+
+
+@patch(EC2ContainerServiceBackend.create_service)
+def _create_service(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
+    service = fn(self, *args, **kwargs)
+    if TASK_RUNNER.enabled:
+        # the monitor loop starts the service's tasks; the counts show the real state
+        service.running_count = 0
+        service.pending_count = 0
+        TASK_RUNNER.ensure_started()
+    return service
+
+
+@patch(EC2ContainerServiceBackend.update_service)
+def _update_service(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
+    service = fn(self, *args, **kwargs)
+    TASK_RUNNER.ensure_started()
+    return service
+
+
+@patch(EC2ContainerServiceBackend.list_tasks)
+def _list_tasks(fn, self: EC2ContainerServiceBackend, *args, **kwargs):
+    tasks = fn(self, *args, **kwargs)
+    # Moto's response handler passes the arguments by position:
+    # cluster_str, container_instance, family, started_by, service_name, desiredStatus
+    service_name = kwargs.get("service_name", args[4] if len(args) > 4 else None)
+    if service_name:
+        # Moto ignores this filter; tasks of a service have the group "service:<name>"
+        group = "service:" + service_name.split("/")[-1]
+        tasks = [t for t in tasks if getattr(t, "group", None) == group]
+    return tasks
+
+
 class EcsProvider(EcsApi, ServiceLifecycleHook):
     def accept_state_visitor(self, visitor: StateVisitor):
         visitor.visit(ecs_backends)
+
+    def on_before_stop(self):
+        TASK_RUNNER.shutdown()
+
+    def on_before_state_reset(self):
+        TASK_RUNNER.shutdown()
